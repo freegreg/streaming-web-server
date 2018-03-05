@@ -23,7 +23,8 @@ std::condition_variable cv;
 short int pcm_l[8000];
 short int pcm_r[8000];
 int pcmLength;
-
+bool initCompleted = false;
+WAVEFORMATEX *pwfx;
 void createWav(LPCWAVEFORMATEX pwfx, BYTE* pSoundData, LONG pSoundDataLength, UINT32 nFrames);
 
 void LoopbackCaptureThreadFunction(LoopbackCaptureThreadFunctionArguments *pArgs, bool *capture_stop) {
@@ -63,15 +64,13 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
     }
 
     // get the default device format
-    WAVEFORMATEX *pwfx;
+    
     hr = pAudioClient->GetMixFormat(&pwfx);
     if (FAILED(hr)) {
         ERR(L"IAudioClient::GetMixFormat failed: hr = 0x%08x", hr);
         return hr;
     }
     CoTaskMemFreeOnExit freeMixFormat(pwfx);
-
-
 
         // coerce int-16 wave format
         // can do this in-place since we're not changing the size of the format
@@ -180,7 +179,7 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
         return hr;
     }
     AudioClientStopOnExit stopAudioClient(pAudioClient);
-
+	initCompleted = true;
     bool bFirstPacket = true;
     for (UINT32 nPasses = 0; *capture_stop; nPasses++) {
 		
@@ -263,6 +262,18 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
     } // capture loop
 
     return hr;
+}
+
+int LoopbackCaptureGetSampleRate(void) {
+	return pwfx->nSamplesPerSec;
+}
+
+int LoopbackCaptureGetNChannels(void) {
+	return pwfx->nChannels;
+}
+
+int LoopbackCaptureInitCompeted(void) {
+	return initCompleted;
 }
 
 namespace little_endian_io

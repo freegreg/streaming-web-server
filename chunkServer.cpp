@@ -313,20 +313,6 @@ int main(int argc, LPCWSTR argv[])
 	printLocalIP(4);
 	gfp = lame_init(); /* initialize libmp3lame */
 
-	lame_set_num_channels(gfp, 2);
-	lame_set_in_samplerate(gfp, 44100);
-	lame_set_brate(gfp, 320);
-	lame_set_mode(gfp, STEREO);
-	lame_set_quality(gfp, 2);   /* 2=high  5 = medium  7=low */
-
-	int ret_code = lame_init_params(gfp);
-
-	if (ret_code < 0) {
-		//if (ret == -1) {
-		//display_bitrates(stderr);
-		//}
-		body_stream_ << "fatal error during initialization\n";
-	}
 	HRESULT hr = S_OK;
 
 	hr = CoInitialize(NULL);
@@ -357,6 +343,21 @@ int main(int argc, LPCWSTR argv[])
 		LoopbackCaptureThreadFunction(&threadArgs, &bKeepWaiting);
 	});
 	
+	int ret_code = lame_init_params(gfp);
+
+	if (ret_code < 0) {
+		//if (ret == -1) {
+		//display_bitrates(stderr);
+		//}
+		body_stream_ << "fatal error during initialization\n";
+	}
+	while(!LoopbackCaptureInitCompeted());
+	lame_set_num_channels(gfp, LoopbackCaptureGetNChannels());
+	lame_set_in_samplerate(gfp, LoopbackCaptureGetSampleRate());
+	lame_set_brate(gfp, 320);
+	lame_set_mode(gfp, STEREO);
+	lame_set_quality(gfp, 2);   /* 2=high  5 = medium  7=low */
+
 	//while (pcmLength == 0);
 	boost::asio::io_service io_service;
 	chunk_connection connection(io_service);

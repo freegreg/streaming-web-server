@@ -22,6 +22,7 @@ mutex mtx;
 std::condition_variable cv;
 short int pcm_l[8000];
 short int pcm_r[8000];
+unsigned char pcm[32000];
 int pcmLength;
 bool initCompleted = false;
 WAVEFORMATEX *pwfx;
@@ -211,7 +212,8 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
 					sample = ((x1 & 0x000000FF) << 8) | (x & 0x000000FF);
 					pcm_l[i] = (sample);
 				}
-				pcmLength = nNumFramesToRead;
+				std::copy(pData, pData + nNumFramesToRead*4, pcm);
+				pcmLength = nNumFramesToRead * 4;
 				cv.notify_all();
 			}
 

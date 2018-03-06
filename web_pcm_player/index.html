@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Opus to PCM</title>
+</head>
+<body>
+<div id="container" style="width: 400px; margin: 0 auto;">
+    <h2>It should play audio if everying went well!</h2>
+</div>
+<script>
+ window.onload = function() {
+   var socketURL =  'ws://' + location.host;
+   var player = new PCMPlayer({
+        encoding: '16bitInt',
+        channels: 2,
+        sampleRate: 44100,
+        flushingTime: 10
+   });
+   var ws = new WebSocket(socketURL);
+       ws.binaryType = 'arraybuffer';
+       ws.addEventListener('message',function(event) {
+            var data = new Uint8Array(event.data);
+            player.feed(data);
+       });
+ }   
+</script>
+<script type="text/javascript" src="../pcm-player.js"></script>
+</body>
+</html>

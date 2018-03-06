@@ -17,6 +17,10 @@
 
 #include <iostream>
 #include <fstream>  
+
+#include <boost/beast.hpp>
+
+#include "beast_server.h"
 #define bufSize 100000
 
 using boost::asio::ip::tcp;
@@ -32,7 +36,6 @@ const std::string http_chunk_header =
 "HTTP/1.1 200 OK\r\n"
 "Cache-Control:no-cache, no-store\r\n"
 "Content-Type:audio/mpeg\r\n"
-
 "\r\n";
 
 const char crlf[] = { '\r', '\n' };
@@ -46,13 +49,14 @@ extern UINT32 nNumFramesToRead;
 extern DWORD dwFlags;
 extern std::mutex mtx;
 extern std::condition_variable cv;
-
-lame_t  gfp;
-short int * pcm;
 extern short int pcm_l[8000];
 extern short int pcm_r[8000];
-bool bKeepWaiting = true;
 extern int pcmLength;
+
+lame_t  gfp;
+
+bool bKeepWaiting = true;
+
 
 long int MAXMP3BUFFER = 32000;//1.25*(float)nNumFramesToRead + 720;
 unsigned char *mp3buffer = new unsigned char[MAXMP3BUFFER];
@@ -310,8 +314,9 @@ long int createWavePCM(short int ** pcm_arr);
 
 int main(int argc, LPCWSTR argv[])
 {
+	
 	printLocalIP(4);
-	gfp = lame_init(); /* initialize libmp3lame */
+	
 
 	HRESULT hr = S_OK;
 
@@ -342,29 +347,34 @@ int main(int argc, LPCWSTR argv[])
 	{
 		LoopbackCaptureThreadFunction(&threadArgs, &bKeepWaiting);
 	});
-	
-	int ret_code = lame_init_params(gfp);
-
-	if (ret_code < 0) {
-		//if (ret == -1) {
-		//display_bitrates(stderr);
-		//}
-		body_stream_ << "fatal error during initialization\n";
-	}
-	while(!LoopbackCaptureInitCompeted());
-	lame_set_num_channels(gfp, LoopbackCaptureGetNChannels());
-	lame_set_in_samplerate(gfp, LoopbackCaptureGetSampleRate());
-	lame_set_brate(gfp, 320);
-	lame_set_mode(gfp, STEREO);
-	lame_set_quality(gfp, 2);   /* 2=high  5 = medium  7=low */
-
-	//while (pcmLength == 0);
-	boost::asio::io_service io_service;
-	chunk_connection connection(io_service);
-	// Run the service.
-	io_service.run();
-	bKeepWaiting = false;
+	while (!LoopbackCaptureInitCompeted());
+	startBeastServer(100, 8080, "E:\\docs\\projects\\c++projects\\web_pcm_player");
 	start_capture_thread.join();
+	
+	//gfp = lame_init(); /* initialize libmp3lame */
+	//int ret_code = lame_init_params(gfp);
+
+	//if (ret_code < 0) {
+	//	//if (ret == -1) {
+	//	//display_bitrates(stderr);
+	//	//}
+	//	body_stream_ << "fatal error during initialization\n";
+	//}
+
+	//
+	//lame_set_num_channels(gfp, LoopbackCaptureGetNChannels());
+	//lame_set_in_samplerate(gfp, LoopbackCaptureGetSampleRate());
+	//lame_set_brate(gfp, 320);
+	//lame_set_mode(gfp, STEREO);
+	//lame_set_quality(gfp, 2);   /* 2=high  5 = medium  7=low */
+
+	////while (pcmLength == 0);
+	//boost::asio::io_service io_service;
+	//chunk_connection connection(io_service);
+	//// Run the service.
+	//io_service.run();
+	//bKeepWaiting = false;
+	
 	std::getchar();
 }
 
@@ -455,33 +465,4 @@ long int createWavePCM(short int ** pcm_arr)
 	}
 	std::cout << "pcm..." << (*pcm_arr)[0] << std::endl << (*pcm_arr)[1] << std::endl << (*pcm_arr)[2] << std::endl << (*pcm_arr)[3] << std::endl << (*pcm_arr)[4] << std::endl;
 	return N;
-}
-
-
-
-void enocdePCM() {
-	mtx.lock();
-
-	if (nNumFramesToRead > 0) {
-
-		long int MAXMP3BUFFER = 1.25*(float)nNumFramesToRead + 720;
-		mp3buffer = new unsigned char[MAXMP3BUFFER];
-
-		pcm = new short int[nNumFramesToRead];
-		for (int i = 0; i < nNumFramesToRead; i++) {
-			short int x = pData[i * 2];
-			short int y = pData[i * 2 + 1];
-			pcm[i] = (x) | (y << 8);
-		}
-		//pcm = reinterpret_cast<short int*>(pData);
-
-//		mp3length = lame_encode_buffer(gfp, pcm, pcm, nNumFramesToRead, mp3buffer, MAXMP3BUFFER);
-		//std::cout << "mp3length..." << mp3length << std::endl;
-//		body_stream_.write(reinterpret_cast<const char*>(mp3buffer), mp3length);
-		delete pcm;
-		delete mp3buffer;
-		nNumFramesToRead = 0;
-	}
-	mtx.unlock();
-	//return &start_capture_thread;
 }

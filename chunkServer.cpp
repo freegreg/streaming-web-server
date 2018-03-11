@@ -49,9 +49,6 @@ extern UINT32 nNumFramesToRead;
 extern DWORD dwFlags;
 extern std::mutex mtx;
 extern std::condition_variable cv;
-extern short int pcm_l[8000];
-extern short int pcm_r[8000];
-extern int pcmLength;
 
 lame_t  gfp;
 
@@ -77,247 +74,10 @@ std::string buffer_to_string(const boost::asio::streambuf &buffer)
 	return result;
 }
 
-class chunk_connection
-{
-public:
-
-	chunk_connection(boost::asio::io_service& io_service): socket_(io_service), acceptor_(io_service, tcp::endpoint(tcp::v4(), 8080))
-	{
-		// Asynchronous accept connection.
-		acceptor_.async_accept(socket(), boost::bind(&chunk_connection::start, this, boost::asio::placeholders::error));
-
-		
-	}
-
-	/// Get the socket associated with the connection
-	tcp::socket& socket() { return socket_; }
-
-	/// Start asynchronous http chunk coding.
-	void start(const boost::system::error_code& error)
-	{
-		// On error, return early.
-		if (error)
-		{
-			close();
-			return;
-		}
-		std::cout << "Local IP Adress: " << socket_.local_endpoint().address().to_string() << std::endl;
-		std::cout << "Remote IP Adress: " << socket_.remote_endpoint().address().to_string() << std::endl;
-
-		// Start writing the header.
-		read_request();
-	}
-
-private:
-	boost::asio::streambuf buf;
-	// Write http header.
-	void read_request()
-	{
-		//boost::shared_ptr<boost::asio::streambuf> buf(new boost::asio::streambuf);
-		
-		boost::asio::async_read_until(socket_,
-			buf,
-			"\r\n\r\n",
-			boost::bind(&chunk_connection::handle_read_request, this,
-				boost::asio::placeholders::error, boost::asio::placeholders::bytes_transferred));
-
-	}
-	/// Handle read of http request.
-	void handle_read_request(const boost::system::error_code& error, std::size_t bytes_recieved)
-	{
-		// On error, return early.
-		if (!error)
-		{
-			std::string s = buffer_to_string(buf);
-			std::string delimiter = "\n";
-			std::string req = s.substr(0, s.find(delimiter));
-
-			std::cout << "Message length: " << bytes_recieved << "; Req: " << req  << std::endl;
-		}
-		else
-		{
-			std::cout << "Error occurred." << std::endl;
-			close();
-			return;
-		}
-		write_header();
-	}
-
-	// Write http header.
-	void write_header()
-	{
-		std::cout << "Writing http header." << std::endl;
-
-		// Start chunked transfer coding.  Write http headers:
-		boost::asio::async_write(socket_,
-			boost::asio::buffer(http_chunk_header),
-			boost::bind(&chunk_connection::handle_write_header, this,
-				boost::asio::placeholders::error));
-	}
-
-	/// Handle writing of http header.
-	void handle_write_header(const boost::system::error_code& error)
-	{
-		// On error, return early.
-		if (error)
-		{
-			close();
-			return;
-		}
-
-		handle_read_chunk(error);
-	}
-
-	// Handle reading a file chunk.
-	void handle_read_chunk(const boost::system::error_code& error)
-	{
-		// On non-eof error, return early.
-		if (error)
-		{
-			std::cout << "Error reading chunk..." << error << std::endl;
-			close();
-			return;
-		}
-
-		std::size_t bytes_transferred;
-		bool eof;
-		int mp3length = 0;
-		int j = 0;
-		while (mp3length == 0) {
-			j++;
-			std::unique_lock<std::mutex> lck(mtx);
-			while (pcmLength == 0) cv.wait(lck);
-			//std::cout << pcmLength << std::endl;
-			if (pcmLength > 0) {
-				
-				mp3length = lame_encode_buffer(gfp, pcm_l, pcm_r, pcmLength, mp3buffer, MAXMP3BUFFER);
-				//body_stream_.write(reinterpret_cast<const char*>(mp3buffer), mp3length);
-				if (mp3length > 0) {
-					//body_stream_.write(reinterpret_cast<const char*>(mp3buffer), mp3length);
-					j == 0;
-				}
-				
-				pcmLength = 0;
-			}
-
-		}
-
-		if (!bKeepWaiting) {
-			int finalFrames = lame_encode_flush_nogap(gfp, mp3buffer, MAXMP3BUFFER);
-			if (finalFrames > 0) {
-				body_stream_.write(reinterpret_cast<const char*>(mp3buffer), finalFrames);
-			}
-			eof = true;
-		}
-		
-		//bytes_transferred = body_stream_.rdbuf()->in_avail();
-		//std::cout << bytes_transferred << std::endl;
-		//std::cout << stream_size << " - stream size." << std::endl;
-		if (mp3length >= bufSize) {
-			body_stream_.read(chunk_data_, bufSize);
-			bytes_transferred = bufSize;
-			std::copy(mp3buffer, mp3buffer + bufSize, chunk_data_);
-			eof = false;
-		}
-		else {
-			bytes_transferred = mp3length;
-			std::copy(mp3buffer, mp3buffer + mp3length, chunk_data_);
-			eof = false;
-		}
-		
-		write_chunk(bytes_transferred, eof);
-	}
-
-	// Prepare chunk and write to socket.
-	void write_chunk(std::size_t bytes_transferred, bool eof)
-	{
-		std::vector<boost::asio::const_buffer> buffers;
-
-		// If data was read, create a chunk-body.
-		if (bytes_transferred)
-		{
-			buffers.push_back(boost::asio::buffer(chunk_data_, bytes_transferred));
-		}
-
-		// If eof, append last-chunk to outbound data.
-		if (eof)
-		{
-			//std::cout << "Writing last-chunk..." << std::endl;
-			eof = true;
-		}
-
-		//std::cout << "Writing chunk..." << std::endl;
-
-		// Write to chunk to socket.
-		boost::asio::async_write(socket_, buffers,
-			boost::bind(&chunk_connection::handle_write_chunk, this,
-				boost::asio::placeholders::error,
-				eof));
-	}
-
-	// Handle writing a chunk.
-	void handle_write_chunk(const boost::system::error_code& error,
-		bool eof)
-	{
-		//std::cout << "Writing chunk..." << std::endl;
-		// If eof or error, then shutdown socket and return.
-		if (eof || error)
-		{
-			if (error) {
-				std::cout << "Error writing chunk..." << error << std::endl;
-			}
-			// Initiate graceful connection closure.
-			boost::system::error_code ignored_ec;
-			socket_.shutdown(tcp::socket::shutdown_both, ignored_ec);
-			close();
-			return;
-		}
-
-		// Otherwise, body_stream_ still has data.
-		handle_read_chunk(error);
-	}
-
-	// Close the socket and body_stream.
-	void close()
-	{
-		std::cout << "Close...Wait for anaother request" << std::endl;
-		boost::system::error_code ignored_ec;
-		socket_.close(ignored_ec);
-		// Asynchronous accept connection.
-		//body_stream_.write(reinterpret_cast<const char*>(mp3buffer), mp3length);
-		body_stream_.str(std::string());
-		acceptor_.async_accept(socket(), boost::bind(&chunk_connection::start, this, boost::asio::placeholders::error));
-		//body_st ream_.close(ignored_ec);
-	}
-
-private:
-
-	// Socket for the connection.
-	tcp::socket socket_;
-	tcp::acceptor acceptor_;
-	tcp::endpoint endpoint_;
-	// Stream being chunked.
-	//std::stringstream body_stream_;
-	
-	// Buffer to read part of the file into.
-	//boost::array<char, 100000> chunk_data_;
-	char chunk_data_[bufSize];
-
-	// Buffer holds hex encoded value of chunk_data_'s valid size.
-	std::string chunk_size_;
-
-	// Name of pipe.
-	//std::string pipe_name_;
-};
-void createWave();
-long int createWavePCM(short int ** pcm_arr);
-
 int main(int argc, LPCWSTR argv[])
-{
-	
+{	
 	printLocalIP(4);
 	
-
 	HRESULT hr = S_OK;
 
 	hr = CoInitialize(NULL);
@@ -348,7 +108,7 @@ int main(int argc, LPCWSTR argv[])
 		LoopbackCaptureThreadFunction(&threadArgs, &bKeepWaiting);
 	});
 	while (!LoopbackCaptureInitCompeted());
-	startBeastServer(100, 8080, "E:\\docs\\projects\\c++projects\\web_pcm_player");
+	startBeastServer(100, 8080, "G:\\projects\\chunkServer\\ConsoleApplication1\\web_pcm_player");
 	start_capture_thread.join();
 	
 	//gfp = lame_init(); /* initialize libmp3lame */
@@ -368,12 +128,6 @@ int main(int argc, LPCWSTR argv[])
 	//lame_set_mode(gfp, STEREO);
 	//lame_set_quality(gfp, 2);   /* 2=high  5 = medium  7=low */
 
-	////while (pcmLength == 0);
-	//boost::asio::io_service io_service;
-	//chunk_connection connection(io_service);
-	//// Run the service.
-	//io_service.run();
-	//bKeepWaiting = false;
 	
 	std::getchar();
 }

@@ -21,3 +21,4 @@ void LoopbackCaptureThreadFunction(LoopbackCaptureThreadFunctionArguments *pArgs
 int LoopbackCaptureGetSampleRate(void);
 int LoopbackCaptureGetNChannels(void);
 int LoopbackCaptureInitCompeted(void);
+#define PCMBUFFERLENGTH 192000

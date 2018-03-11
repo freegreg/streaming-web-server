@@ -20,10 +20,9 @@ UINT32 nNumFramesToRead;
 DWORD dwFlags;
 mutex mtx;
 std::condition_variable cv;
-short int pcm_l[8000];
-short int pcm_r[8000];
-unsigned char pcm[32000];
-int pcmLength;
+
+unsigned char pcm[PCMBUFFERLENGTH];
+unsigned int pcmLength = 0;
 bool initCompleted = false;
 WAVEFORMATEX *pwfx;
 void createWav(LPCWAVEFORMATEX pwfx, BYTE* pSoundData, LONG pSoundDataLength, UINT32 nFrames);
@@ -58,7 +57,10 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
     
     // get the default device periodicity
     REFERENCE_TIME hnsDefaultDevicePeriod;
-    hr = pAudioClient->GetDevicePeriod(&hnsDefaultDevicePeriod, NULL);
+	REFERENCE_TIME minDevicePeriod;
+	    hr = pAudioClient->GetDevicePeriod(&hnsDefaultDevicePeriod, &minDevicePeriod);
+		std::cout << "hnsDefaultDevicePeriod (ms) " << hnsDefaultDevicePeriod  /10000 << std::endl;
+		std::cout << "minDevicePeriod  (ms) " << minDevicePeriod  /10000 << std::endl;
     if (FAILED(hr)) {
         ERR(L"IAudioClient::GetDevicePeriod failed: hr = 0x%08x", hr);
         return hr;
@@ -202,18 +204,14 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
                 );
 			if (nNumFramesToRead > 0) {
 				std::unique_lock<std::mutex> lck(mtx);
-				for (int i = 0; i < nNumFramesToRead; i++) {
-					unsigned char x = pData[i * 4];
-					unsigned char x1 = pData[i * 4 + 1];
-					short int sample = ((x1 & 0x000000FF) << 8) | (x & 0x000000FF);
-					pcm_r[i] = (sample);
-					x = pData[i * 4 + 2];
-					x1 = pData[i * 4 + 3];
-					sample = ((x1 & 0x000000FF) << 8) | (x & 0x000000FF);
-					pcm_l[i] = (sample);
+				if ((pcmLength == 0) || ((pcmLength + nNumFramesToRead * 4) >= PCMBUFFERLENGTH)) {
+					std::copy(pData, pData + nNumFramesToRead * 4, pcm);
+					pcmLength = nNumFramesToRead * 4;
 				}
-				std::copy(pData, pData + nNumFramesToRead*4, pcm);
-				pcmLength = nNumFramesToRead * 4;
+				else {
+					std::copy(pData, pData + nNumFramesToRead * 4, pcm + pcmLength);
+					pcmLength = pcmLength + nNumFramesToRead * 4;
+				}
 				cv.notify_all();
 			}
 

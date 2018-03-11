@@ -1,11 +1,12 @@
 #pragma once
 #include <string>
-#include <mutex>  
+#include <mutex>
+#define PCMBUFFERLENGTH 192000
 using namespace std;
 
 extern std::mutex mtx;
 extern std::condition_variable cv;
-extern unsigned char pcm[32000];
-extern int pcmLength;
+extern unsigned char pcm[PCMBUFFERLENGTH];
+extern unsigned int pcmLength;
 
 int startBeastServer(int maxNumberOfThreads, unsigned short listeningPort, std::string const doc_root);

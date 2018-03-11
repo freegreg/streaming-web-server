@@ -287,16 +287,18 @@ public:
 		//std::cout << "on_read_pcm..."  << std::endl;
 		// Note that there is activity
 		activity();
-		unsigned char pcm_local[32000];
+		unsigned char pcm_local[PCMBUFFERLENGTH];
+		unsigned int pcmLength_local;
 		{std::unique_lock<std::mutex> lck(mtx);
 		cv.wait(lck);
-
+		pcmLength_local = pcmLength;
 		// Write binary PCM data
-		std::copy(pcm, pcm + pcmLength, pcm_local);
+		std::copy(pcm, pcm + pcmLength_local, pcm_local);
+		pcmLength = 0;
 		}
 		ws_.binary(true);
 		ws_.async_write(
-			boost::asio::buffer(pcm_local, pcmLength),
+			boost::asio::buffer(pcm_local, pcmLength_local),
 			boost::asio::bind_executor(
 				strand_,
 				std::bind(

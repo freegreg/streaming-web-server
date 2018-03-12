@@ -23,7 +23,7 @@ std::condition_variable cv;
 
 unsigned char pcm[PCMBUFFERLENGTH];
 unsigned int pcmLength = 0;
-bool initCompleted = false;
+volatile bool initCompleted = false;
 WAVEFORMATEX *pwfx;
 void createWav(LPCWAVEFORMATEX pwfx, BYTE* pSoundData, LONG pSoundDataLength, UINT32 nFrames);
 
@@ -74,43 +74,44 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
         return hr;
     }
     CoTaskMemFreeOnExit freeMixFormat(pwfx);
+	if (bInt16) {
+		// coerce int-16 wave format
+		// can do this in-place since we're not changing the size of the format
+		// also, the engine will auto-convert from float to int for us
+		switch (pwfx->wFormatTag) {
+		case WAVE_FORMAT_IEEE_FLOAT:
+			pwfx->wFormatTag = WAVE_FORMAT_PCM;
+			pwfx->wBitsPerSample = 16;
+			pwfx->nBlockAlign = pwfx->nChannels * pwfx->wBitsPerSample / 8;
+			pwfx->nAvgBytesPerSec = pwfx->nBlockAlign * pwfx->nSamplesPerSec;
 
-        // coerce int-16 wave format
-        // can do this in-place since we're not changing the size of the format
-        // also, the engine will auto-convert from float to int for us
-        switch (pwfx->wFormatTag) {
-            case WAVE_FORMAT_IEEE_FLOAT:
-                pwfx->wFormatTag = WAVE_FORMAT_PCM;
-                pwfx->wBitsPerSample = 16;
-                pwfx->nBlockAlign = pwfx->nChannels * pwfx->wBitsPerSample / 8;
+			break;
+
+		case WAVE_FORMAT_EXTENSIBLE:
+		{
+			// naked scope for case-local variable
+			PWAVEFORMATEXTENSIBLE pEx = reinterpret_cast<PWAVEFORMATEXTENSIBLE>(pwfx);
+			if (IsEqualGUID(KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, pEx->SubFormat)) {
+				std::cout << "KSDATAFORMAT_SUBTYPE_IEEE_FLOAT  " << std::endl;
+				pEx->SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+				pEx->Samples.wValidBitsPerSample = 16;
+				pwfx->wBitsPerSample = 16;
+				pwfx->nBlockAlign = pwfx->nChannels * pwfx->wBitsPerSample / 8;
 				pwfx->nAvgBytesPerSec = pwfx->nBlockAlign * pwfx->nSamplesPerSec;
+			}
+			else {
+				ERR(L"%s", L"Don't know how to coerce mix format to int-16");
+				return E_UNEXPECTED;
+			}
+		}
+		break;
 
-                break;
+		default:
+			ERR(L"Don't know how to coerce WAVEFORMATEX with wFormatTag = 0x%08x to int-16", pwfx->wFormatTag);
+			return E_UNEXPECTED;
+		}
 
-            case WAVE_FORMAT_EXTENSIBLE:
-                {
-                    // naked scope for case-local variable
-                    PWAVEFORMATEXTENSIBLE pEx = reinterpret_cast<PWAVEFORMATEXTENSIBLE>(pwfx);
-                    if (IsEqualGUID(KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, pEx->SubFormat)) {
-						std::cout << "KSDATAFORMAT_SUBTYPE_IEEE_FLOAT  " << std::endl;
-                        pEx->SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-                        pEx->Samples.wValidBitsPerSample = 16;
-                        pwfx->wBitsPerSample = 16;
-                        pwfx->nBlockAlign = pwfx->nChannels * pwfx->wBitsPerSample / 8;
-                        pwfx->nAvgBytesPerSec = pwfx->nBlockAlign * pwfx->nSamplesPerSec;
-                    } else {
-                        ERR(L"%s", L"Don't know how to coerce mix format to int-16");
-                        return E_UNEXPECTED;
-                    }
-                }
-                break;
-
-            default:
-                ERR(L"Don't know how to coerce WAVEFORMATEX with wFormatTag = 0x%08x to int-16", pwfx->wFormatTag);
-                return E_UNEXPECTED;
-        }
-
-		
+	}
 		// create a periodic waitable timer
     HANDLE hWakeUp = CreateWaitableTimer(NULL, FALSE, NULL);
     if (NULL == hWakeUp) {
@@ -163,6 +164,7 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
 	std::cout << "number of bits per sample of mono data " << pwfx->wBitsPerSample << std::endl;
 	std::cout << "the count in bytes of the size of extra information (after cbSize)  " << pwfx->cbSize << std::endl;
 
+	unsigned int BlockAlign = pwfx->nBlockAlign;
     // activate an IAudioCaptureClient
     IAudioCaptureClient *pAudioCaptureClient;
     hr = pAudioClient->GetService(
@@ -204,13 +206,13 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
                 );
 			if (nNumFramesToRead > 0) {
 				std::unique_lock<std::mutex> lck(mtx);
-				if ((pcmLength == 0) || ((pcmLength + nNumFramesToRead * 4) >= PCMBUFFERLENGTH)) {
-					std::copy(pData, pData + nNumFramesToRead * 4, pcm);
-					pcmLength = nNumFramesToRead * 4;
+				if ((pcmLength == 0) || ((pcmLength + nNumFramesToRead * BlockAlign) >= PCMBUFFERLENGTH)) {
+					std::copy(pData, pData + nNumFramesToRead * BlockAlign, pcm);
+					pcmLength = nNumFramesToRead * BlockAlign;
 				}
 				else {
-					std::copy(pData, pData + nNumFramesToRead * 4, pcm + pcmLength);
-					pcmLength = pcmLength + nNumFramesToRead * 4;
+					std::copy(pData, pData + nNumFramesToRead * BlockAlign, pcm + pcmLength);
+					pcmLength = pcmLength + nNumFramesToRead * BlockAlign;
 				}
 				cv.notify_all();
 			}
@@ -272,7 +274,7 @@ int LoopbackCaptureGetNChannels(void) {
 	return pwfx->nChannels;
 }
 
-int LoopbackCaptureInitCompeted(void) {
+bool LoopbackCaptureInitCompeted(void) {
 	return initCompleted;
 }
 

@@ -12,10 +12,10 @@
  window.onload = function() {
    var socketURL =  'ws://' + location.host;
    var player = new PCMPlayer({
-        encoding: '16bitInt',
+        encoding: '32bitFloat',
         channels: 2,
         sampleRate: 44100,
-        flushingTime: 10
+        flushingTime: 20
    });
    var ws = new WebSocket(socketURL);
        ws.binaryType = 'arraybuffer';

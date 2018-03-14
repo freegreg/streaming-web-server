@@ -30,6 +30,37 @@
 #include <string>
 using namespace std;
 
+string res_index = R"(<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PCM Streamer</title>
+</head>
+<body>
+<div id="container" style="width: 400px; margin: 0 auto;">
+    <h2>It should play audio if everying went well!</h2>
+</div>
+<script>
+ window.onload = function() {
+   var socketURL =  'ws://' + location.host;
+   var player = new PCMPlayer({
+        encoding: '32bitFloat',
+        channels: 2,
+        sampleRate: 44100,
+        flushingTime: 20
+   });
+   var ws = new WebSocket(socketURL);
+       ws.binaryType = 'arraybuffer';
+       ws.addEventListener('message',function(event) {
+            var data = new Uint8Array(event.data);
+            player.feed(data);
+       });
+ }   
+</script>
+<script type="text/javascript" src="../pcm-player.js"></script>
+</body>
+</html>)";
+
 using tcp = boost::asio::ip::tcp;               // from <boost/asio/ip/tcp.hpp>
 namespace http = boost::beast::http;            // from <boost/beast/http.hpp>
 namespace websocket = boost::beast::websocket;  // from <boost/beast/websocket.hpp>
@@ -165,21 +196,55 @@ template<
 	if (req.target().back() == '/')
 		path.append("index.html");
 
-	// Attempt to open the file
+	// Attempt to construct response from available strings
 	boost::beast::error_code ec;
+	long long size;
+	if (path.compare("/index.html") == 0) {
+		http::string_body::value_type body(res_index);
+		// Handle an unknown error
+		if (ec)
+			return send(server_error(ec.message()));
+
+		// Cache the size since we need it after the move
+		size = body.size();
+
+		// Respond to GET request
+		http::response<http::string_body> res{
+			std::piecewise_construct,
+			std::make_tuple(std::move(body)),
+			std::make_tuple(http::status::ok, req.version()) };
+		res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+		res.set(http::field::content_type, mime_type(path));
+		res.content_length(size);
+		res.keep_alive(req.keep_alive());
+		return send(std::move(res));
+	}
+	else {
+	// Attempt to open the file
+	
 	http::file_body::value_type body;
 	body.open(path.c_str(), boost::beast::file_mode::scan, ec);
-
 	// Handle the case where the file doesn't exist
 	if (ec == boost::system::errc::no_such_file_or_directory)
 		return send(not_found(req.target()));
-
 	// Handle an unknown error
 	if (ec)
 		return send(server_error(ec.message()));
 
 	// Cache the size since we need it after the move
-	auto const size = body.size();
+	size = body.size();
+	
+	// Respond to GET request
+	http::response<http::file_body> res{
+		std::piecewise_construct,
+		std::make_tuple(std::move(body)),
+		std::make_tuple(http::status::ok, req.version()) };
+	res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
+	res.set(http::field::content_type, mime_type(path));
+	res.content_length(size);
+	res.keep_alive(req.keep_alive());
+	return send(std::move(res));
+	}
 
 	// Respond to HEAD request
 	if (req.method() == http::verb::head)
@@ -192,16 +257,6 @@ template<
 		return send(std::move(res));
 	}
 
-	// Respond to GET request
-	http::response<http::file_body> res{
-		std::piecewise_construct,
-		std::make_tuple(std::move(body)),
-		std::make_tuple(http::status::ok, req.version()) };
-	res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
-	res.set(http::field::content_type, mime_type(path));
-	res.content_length(size);
-	res.keep_alive(req.keep_alive());
-	return send(std::move(res));
 }
 
 //------------------------------------------------------------------------------

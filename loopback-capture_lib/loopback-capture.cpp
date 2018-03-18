@@ -8,6 +8,7 @@
 #include <mutex>          // std::mutex
 #include <stdio.h>
 #include <iostream>
+#include "prefs.h"
 
 using namespace std;
 
@@ -24,26 +25,35 @@ std::condition_variable cv;
 unsigned char pcm[PCMBUFFERLENGTH];
 unsigned int pcmLength = 0;
 volatile bool initCompleted = false;
+long long pnFrames;
 WAVEFORMATEX *pwfx;
-void createWav(LPCWAVEFORMATEX pwfx, BYTE* pSoundData, LONG pSoundDataLength, UINT32 nFrames);
+IMMDevice *pMMDevice;
 
-void LoopbackCaptureThreadFunction(LoopbackCaptureThreadFunctionArguments *pArgs, bool *capture_stop) {
-	pArgs->hr = CoInitialize(NULL);
-	if (FAILED(pArgs->hr)) {
-		ERR(L"CoInitialize failed: hr = 0x%08x", pArgs->hr);
+void LoopbackCaptureThreadFunction(bool *capture_stop) {
+	HRESULT hr = S_OK;
+
+	hr = CoInitialize(NULL);
+	if (FAILED(hr)) {
+		ERR(L"CoInitialize failed: hr = 0x%08x", hr);
 	}
 	CoUninitializeOnExit cuoe;
+	
+	// create arguments for loopback capture thread
+	// open default device if not specified
+	if (NULL == pMMDevice) {
+		hr = get_default_device(&pMMDevice);
+		if (FAILED(hr)) {
+			return;
+		}
+	}
 
-	pArgs->hr = LoopbackCapture(
-		pArgs->pMMDevice,
-		pArgs->hFile,
-		pArgs->bInt16,
-		&pArgs->nFrames,
+	hr = LoopbackCapture(
+		pMMDevice,
 		capture_stop
 	);
 }
 
-HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnFrames, bool *capture_stop) {
+HRESULT LoopbackCapture(IMMDevice *pMMDevice, bool *capture_stop) {
     HRESULT hr;
 
     // activate an IAudioClient
@@ -74,45 +84,9 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
         return hr;
     }
     CoTaskMemFreeOnExit freeMixFormat(pwfx);
-	if (bInt16) {
-		// coerce int-16 wave format
-		// can do this in-place since we're not changing the size of the format
-		// also, the engine will auto-convert from float to int for us
-		switch (pwfx->wFormatTag) {
-		case WAVE_FORMAT_IEEE_FLOAT:
-			pwfx->wFormatTag = WAVE_FORMAT_PCM;
-			pwfx->wBitsPerSample = 16;
-			pwfx->nBlockAlign = pwfx->nChannels * pwfx->wBitsPerSample / 8;
-			pwfx->nAvgBytesPerSec = pwfx->nBlockAlign * pwfx->nSamplesPerSec;
 
-			break;
 
-		case WAVE_FORMAT_EXTENSIBLE:
-		{
-			// naked scope for case-local variable
-			PWAVEFORMATEXTENSIBLE pEx = reinterpret_cast<PWAVEFORMATEXTENSIBLE>(pwfx);
-			if (IsEqualGUID(KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, pEx->SubFormat)) {
-				std::cout << "KSDATAFORMAT_SUBTYPE_IEEE_FLOAT  " << std::endl;
-				pEx->SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
-				pEx->Samples.wValidBitsPerSample = 16;
-				pwfx->wBitsPerSample = 16;
-				pwfx->nBlockAlign = pwfx->nChannels * pwfx->wBitsPerSample / 8;
-				pwfx->nAvgBytesPerSec = pwfx->nBlockAlign * pwfx->nSamplesPerSec;
-			}
-			else {
-				ERR(L"%s", L"Don't know how to coerce mix format to int-16");
-				return E_UNEXPECTED;
-			}
-		}
-		break;
-
-		default:
-			ERR(L"Don't know how to coerce WAVEFORMATEX with wFormatTag = 0x%08x to int-16", pwfx->wFormatTag);
-			return E_UNEXPECTED;
-		}
-
-	}
-		// create a periodic waitable timer
+	// create a periodic waitable timer
     HANDLE hWakeUp = CreateWaitableTimer(NULL, FALSE, NULL);
     if (NULL == hWakeUp) {
         DWORD dwErr = GetLastError();
@@ -139,7 +113,7 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
 	CancelWaitableTimerOnExit cancelWakeUp(hWakeUp);
 
     UINT32 nBlockAlign = pwfx->nBlockAlign;
-    *pnFrames = 0;
+    pnFrames = 0;
     
     // call IAudioClient::Initialize
     // note that AUDCLNT_STREAMFLAGS_LOOPBACK and AUDCLNT_STREAMFLAGS_EVENTCALLBACK
@@ -163,6 +137,40 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
 	std::cout << "block size of data " << pwfx->nBlockAlign << std::endl;
 	std::cout << "number of bits per sample of mono data " << pwfx->wBitsPerSample << std::endl;
 	std::cout << "the count in bytes of the size of extra information (after cbSize)  " << pwfx->cbSize << std::endl;
+
+	switch (pwfx->wFormatTag) {
+	case WAVE_FORMAT_IEEE_FLOAT:
+		//pwfx->wFormatTag = WAVE_FORMAT_PCM;
+		//pwfx->wBitsPerSample = 16;
+		//pwfx->nBlockAlign = pwfx->nChannels * pwfx->wBitsPerSample / 8;
+		//pwfx->nAvgBytesPerSec = pwfx->nBlockAlign * pwfx->nSamplesPerSec;
+
+		break;
+
+	case WAVE_FORMAT_EXTENSIBLE:
+	{
+		// naked scope for case-local variable
+		PWAVEFORMATEXTENSIBLE pEx = reinterpret_cast<PWAVEFORMATEXTENSIBLE>(pwfx);
+		std::cout << "SubFormat type " << pEx->SubFormat << std::endl;
+		if (IsEqualGUID(KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, pEx->SubFormat)) {
+			std::cout << "KSDATAFORMAT_SUBTYPE_IEEE_FLOAT  " << std::endl;
+			//pEx->SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
+			//pEx->Samples.wValidBitsPerSample = 16;
+			//pwfx->wBitsPerSample = 16;
+			//pwfx->nBlockAlign = pwfx->nChannels * pwfx->wBitsPerSample / 8;
+			//pwfx->nAvgBytesPerSec = pwfx->nBlockAlign * pwfx->nSamplesPerSec;
+		}
+		else {
+			ERR(L"%s", L"Don't know how to coerce mix format to int-16");
+			return E_UNEXPECTED;
+		}
+	}
+	break;
+
+	default:
+		ERR(L"Don't know how to coerce WAVEFORMATEX with wFormatTag = 0x%08x to int-16", pwfx->wFormatTag);
+		return E_UNEXPECTED;
+	}
 
 	unsigned int BlockAlign = pwfx->nBlockAlign;
     // activate an IAudioCaptureClient
@@ -218,7 +226,7 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
 			}
 
             if (FAILED(hr)) {
-                ERR(L"IAudioCaptureClient::GetBuffer failed on pass %u after %u frames: hr = 0x%08x", nPasses, *pnFrames, hr);
+                ERR(L"IAudioCaptureClient::GetBuffer failed on pass %u after %u frames: hr = 0x%08x", nPasses, pnFrames, hr);
                 return hr;
             }
 
@@ -232,12 +240,12 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
 				LOG(L"%s", L"The time at which the device's stream position was recorded is uncertain.");
 			}
 			if (dwFlags > 4) {
-                LOG(L"IAudioCaptureClient::GetBuffer set flags to 0x%08x on pass %u after %u frames", dwFlags, nPasses, *pnFrames);
+                LOG(L"IAudioCaptureClient::GetBuffer set flags to 0x%08x on pass %u after %u frames", dwFlags, nPasses, pnFrames);
                 return E_UNEXPECTED;
             }
 
             if (0 == nNumFramesToRead) {
-                ERR(L"IAudioCaptureClient::GetBuffer said to read 0 frames on pass %u after %u frames", nPasses, *pnFrames);
+                ERR(L"IAudioCaptureClient::GetBuffer said to read 0 frames on pass %u after %u frames", nPasses, pnFrames);
                 return E_UNEXPECTED;
             }
 
@@ -245,7 +253,7 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
            
             hr = pAudioCaptureClient->ReleaseBuffer(nNumFramesToRead);
             if (FAILED(hr)) {
-                ERR(L"IAudioCaptureClient::ReleaseBuffer failed on pass %u after %u frames: hr = 0x%08x", nPasses, *pnFrames, hr);
+                ERR(L"IAudioCaptureClient::ReleaseBuffer failed on pass %u after %u frames: hr = 0x%08x", nPasses, pnFrames, hr);
                 return hr;
             }
 
@@ -253,7 +261,7 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
         }
 
         if (FAILED(hr)) {
-            ERR(L"IAudioCaptureClient::GetNextPacketSize failed on pass %u after %u frames: hr = 0x%08x", nPasses, *pnFrames, hr);
+            ERR(L"IAudioCaptureClient::GetNextPacketSize failed on pass %u after %u frames: hr = 0x%08x", nPasses, pnFrames, hr);
             return hr;
         }
 		
@@ -264,6 +272,9 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice,HMMIO hFile,bool bInt16,PUINT32 pnF
     } // capture loop
 
     return hr;
+}
+int LoopbackCaptureGetFormat(void){
+	return pwfx->wFormatTag;
 }
 
 int LoopbackCaptureGetSampleRate(void) {

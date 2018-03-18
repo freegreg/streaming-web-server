@@ -13,6 +13,7 @@
 #include "loopback-capture_lib\common.h"
 #include "loopback-capture_lib\loopback-capture.h"
 
+#include "server_content.h"
 #include "getIPs.h"
 
 #include <iostream>
@@ -78,37 +79,22 @@ int main(int argc, LPCWSTR argv[])
 {	
 	printLocalIP(4);
 	
-	HRESULT hr = S_OK;
-
-	hr = CoInitialize(NULL);
-	if (FAILED(hr)) {
-		ERR(L"CoInitialize failed: hr = 0x%08x", hr);
-	}
-	CoUninitializeOnExit cuoe;
-
-	// parse command line
-	CPrefs prefs(argc, argv, hr);
-	if (FAILED(hr)) {
-		ERR(L"CPrefs::CPrefs constructor failed: hr = 0x%08x", hr);
-	}
-	if (S_FALSE == hr) {
-		// nothing to do
-	}
-
-	// create arguments for loopback capture thread
-	LoopbackCaptureThreadFunctionArguments threadArgs;
-	threadArgs.hr = E_UNEXPECTED; // thread will overwrite this
-	threadArgs.pMMDevice = prefs.m_pMMDevice;
-	threadArgs.bInt16 = prefs.m_bInt16;
-	threadArgs.hFile = prefs.m_hFile;
-	threadArgs.nFrames = 0;
-	//std::thread t([&](viewWindow* view){ view->refreshWindow(render, playerRect, backTexture, playerTexture); }, &window);
 	thread start_capture_thread([&]()
 	{
-		LoopbackCaptureThreadFunction(&threadArgs, &bKeepWaiting);
+		LoopbackCaptureThreadFunction(&bKeepWaiting);
 	});
+
 	while (!LoopbackCaptureInitCompeted());
-	startBeastServer(100, 8080, "G:\\projects\\chunkServer\\ConsoleApplication1\\web_pcm_player");
+
+	map<string, string> contentMap;
+	contentMap.insert(std::pair<string, string>("index.html", 
+		GetIndexPlayer(,
+			LoopbackCaptureGetNChannels(),
+			LoopbackCaptureGetSampleRate(),
+			20)
+		));
+
+	startBeastServer(100, 8080, "G:\\projects\\chunkServer\\ConsoleApplication1\\web_pcm_player",  );
 	start_capture_thread.join();
 	
 	//gfp = lame_init(); /* initialize libmp3lame */

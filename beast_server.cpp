@@ -30,36 +30,7 @@
 #include <string>
 using namespace std;
 
-string res_index = R"(<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>PCM Streamer</title>
-</head>
-<body>
-<div id="container" style="width: 400px; margin: 0 auto;">
-    <h2>It should play audio if everying went well!</h2>
-</div>
-<script>
- window.onload = function() {
-   var socketURL =  'ws://' + location.host;
-   var player = new PCMPlayer({
-        encoding: '32bitFloat',
-        channels: 2,
-        sampleRate: 44100,
-        flushingTime: 20
-   });
-   var ws = new WebSocket(socketURL);
-       ws.binaryType = 'arraybuffer';
-       ws.addEventListener('message',function(event) {
-            var data = new Uint8Array(event.data);
-            player.feed(data);
-       });
- }   
-</script>
-<script type="text/javascript" src="../pcm-player.js"></script>
-</body>
-</html>)";
+
 
 using tcp = boost::asio::ip::tcp;               // from <boost/asio/ip/tcp.hpp>
 namespace http = boost::beast::http;            // from <boost/beast/http.hpp>

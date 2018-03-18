@@ -13,3 +13,5 @@ public:
     ~CPrefs();
 
 };
+
+HRESULT get_default_device(IMMDevice **ppMMDevice);

@@ -1,6 +1,7 @@
 #include <iostream>
 #include <sstream>
 #include <string>
+#include <map>
 #include <vector>
 
 #include <boost/array.hpp>
@@ -84,17 +85,18 @@ int main(int argc, LPCWSTR argv[])
 		LoopbackCaptureThreadFunction(&bKeepWaiting);
 	});
 
-	while (!LoopbackCaptureInitCompeted());
+	while (!LCInitCompeted());
 
 	map<string, string> contentMap;
 	contentMap.insert(std::pair<string, string>("index.html", 
-		GetIndexPlayer(,
-			LoopbackCaptureGetNChannels(),
-			LoopbackCaptureGetSampleRate(),
+		GetIndexPlayer(LCGetFormat(),
+			LCGetBitsPerSample(),
+			LCGetNChannels(),
+			LCGetSampleRate(),
 			20)
 		));
-
-	startBeastServer(100, 8080, "G:\\projects\\chunkServer\\ConsoleApplication1\\web_pcm_player",  );
+	std::cout << contentMap["index.html"];
+	startBeastServer(100, 8080, R"(G:\projects\chunkServer\ConsoleApplication1\web_pcm_player)", contentMap);
 	start_capture_thread.join();
 	
 	//gfp = lame_init(); /* initialize libmp3lame */

@@ -18,11 +18,12 @@ struct LoopbackCaptureThreadFunctionArguments {
 HRESULT LoopbackCapture(IMMDevice *pMMDevice, bool *capture_stop);
 void LoopbackCaptureThreadFunction(bool *capture_stop);
 
-int LoopbackCaptureGetSampleRate(void);
-int LoopbackCaptureGetNChannels(void);
-int LoopbackCaptureGetFormat(void);
+int LCGetSampleRate(void);
+int LCGetNChannels(void);
+int LCGetFormat(void);
+int LCGetBitsPerSample(void);
 
-bool LoopbackCaptureInitCompeted(void);
+bool LCInitCompeted(void);
 
 
 #define PCMBUFFERLENGTH 192000

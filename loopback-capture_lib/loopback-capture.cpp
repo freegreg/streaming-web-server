@@ -151,7 +151,10 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice, bool *capture_stop) {
 	{
 		// naked scope for case-local variable
 		PWAVEFORMATEXTENSIBLE pEx = reinterpret_cast<PWAVEFORMATEXTENSIBLE>(pwfx);
-		std::cout << "SubFormat type " << pEx->SubFormat << std::endl;
+		std::cout << "SubFormat type1 " << pEx->SubFormat.Data1 << std::endl;
+		std::cout << "SubFormat type2 " << pEx->SubFormat.Data2 << std::endl;
+		std::cout << "SubFormat type3 " << pEx->SubFormat.Data3 << std::endl;
+		std::cout << "SubFormat type4 " << pEx->SubFormat.Data4 << std::endl;
 		if (IsEqualGUID(KSDATAFORMAT_SUBTYPE_IEEE_FLOAT, pEx->SubFormat)) {
 			std::cout << "KSDATAFORMAT_SUBTYPE_IEEE_FLOAT  " << std::endl;
 			//pEx->SubFormat = KSDATAFORMAT_SUBTYPE_PCM;
@@ -273,19 +276,24 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice, bool *capture_stop) {
 
     return hr;
 }
-int LoopbackCaptureGetFormat(void){
-	return pwfx->wFormatTag;
+int LCGetFormat(void){
+	PWAVEFORMATEXTENSIBLE pEx = reinterpret_cast<PWAVEFORMATEXTENSIBLE>(pwfx);
+	return pEx->SubFormat.Data1;
 }
 
-int LoopbackCaptureGetSampleRate(void) {
+int LCGetBitsPerSample(void) {
+	return pwfx->wBitsPerSample;
+}
+
+int LCGetSampleRate(void) {
 	return pwfx->nSamplesPerSec;
 }
 
-int LoopbackCaptureGetNChannels(void) {
+int LCGetNChannels(void) {
 	return pwfx->nChannels;
 }
 
-bool LoopbackCaptureInitCompeted(void) {
+bool LCInitCompeted(void) {
 	return initCompleted;
 }
 

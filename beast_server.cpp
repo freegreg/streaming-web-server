@@ -28,6 +28,7 @@
 #include <thread>
 #include <vector>
 #include <string>
+#include <map>
 using namespace std;
 
 
@@ -109,6 +110,7 @@ template<
 	void
 	handle_request(
 		boost::beast::string_view doc_root,
+		std::map<string, string> contentMap,
 		http::request<Body, http::basic_fields<Allocator>>&& req,
 		Send&& send)
 {
@@ -170,8 +172,8 @@ template<
 	// Attempt to construct response from available strings
 	boost::beast::error_code ec;
 	long long size;
-	if (path.compare("/index.html") == 0) {
-		http::string_body::value_type body(res_index);
+	if (!(contentMap.find(path) == contentMap.end())) {
+		http::string_body::value_type body(contentMap[path]);
 		// Handle an unknown error
 		if (ec)
 			return send(server_error(ec.message()));
@@ -627,6 +629,7 @@ class http_session : public std::enable_shared_from_this<http_session>
 	boost::asio::steady_timer timer_;
 	boost::beast::flat_buffer buffer_;
 	std::string const& doc_root_;
+	std::map<string, string> contentMap_;
 	http::request<http::string_body> req_;
 	queue queue_;
 
@@ -635,13 +638,16 @@ public:
 	explicit
 		http_session(
 			tcp::socket socket,
-			std::string const& doc_root)
+			std::string const& doc_root,
+			std::map<string, string> contentMap
+			)
 		: socket_(std::move(socket))
 		, strand_(socket_.get_executor())
 		, timer_(socket_.get_executor().context(),
 		(std::chrono::steady_clock::time_point::max)())
 		, doc_root_(doc_root)
 		, queue_(*this)
+		, contentMap_(contentMap)
 	{
 	}
 
@@ -727,7 +733,7 @@ public:
 		}
 
 		// Send the response
-		handle_request(doc_root_, std::move(req_), queue_);
+		handle_request(doc_root_, contentMap_, std::move(req_), queue_);
 
 		// If we aren't at the queue limit, try to pipeline another request
 		if (!queue_.is_full())
@@ -778,15 +784,17 @@ class listener : public std::enable_shared_from_this<listener>
 	tcp::acceptor acceptor_;
 	tcp::socket socket_;
 	std::string const& doc_root_;
-
+	std::map<string, string> contentMap_;
 public:
 	listener(
 		boost::asio::io_context& ioc,
 		tcp::endpoint endpoint,
-		std::string const& doc_root)
+		std::string const& doc_root,
+		std::map<string, string> contentMap)
 		: acceptor_(ioc)
 		, socket_(ioc)
 		, doc_root_(doc_root)
+		, contentMap_(contentMap)
 	{
 		boost::system::error_code ec;
 
@@ -856,7 +864,8 @@ public:
 			// Create the http_session and run it
 			std::make_shared<http_session>(
 				std::move(socket_),
-				doc_root_)->run();
+				doc_root_,
+				contentMap_)->run();
 		}
 
 		// Accept another connection
@@ -866,7 +875,7 @@ public:
 
 //------------------------------------------------------------------------------
 
-int startBeastServer(int maxNumberOfThreads, unsigned short listeningPort, std::string const doc_root)
+int startBeastServer(int maxNumberOfThreads, unsigned short listeningPort, std::string const doc_root, map<string, string> contentMap)
 {
 	// Check command line arguments.
 	//if (argc != 5)
@@ -886,7 +895,8 @@ int startBeastServer(int maxNumberOfThreads, unsigned short listeningPort, std::
 	std::make_shared<listener>(
 		ioc,
 		tcp::endpoint{ tcp::v4(), listeningPort },
-		doc_root)->run();
+		doc_root,
+		contentMap)->run();
 
 	// Capture SIGINT and SIGTERM to perform a clean shutdown
 	boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);

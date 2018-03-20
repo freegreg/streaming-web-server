@@ -23,8 +23,10 @@ string res_index2 = R"(   });
    var ws = new WebSocket(socketURL);
        ws.binaryType = 'arraybuffer';
        ws.addEventListener('message',function(event) {
-            var data = new Uint8Array(event.data);
-            player.feed(data);
+			var data = new Uint8Array(event.data);
+			if (data.length > 0){
+				player.feed(data);
+			}
        });
  }   
 </script>
@@ -41,15 +43,16 @@ string GetIndexPlayer(
 	string strEncoding;
 	string bits = to_string(bitsPerSample);
 
+	if (bitsPerSample == 32 || bitsPerSample == 16 || bitsPerSample == 8)
 	switch (encoding) {
 	case WAVE_FORMAT_ADPCM:
 		strEncoding = "'" + bits + "bitInt'";
 		break;
 	case WAVE_FORMAT_IEEE_FLOAT:
-		strEncoding = "'" + bits + "bitInt'";
+		strEncoding = "'" + bits + "bitFloat'";
 		break;
 	default:
-		strEncoding = "'" + bits + "bitInt'";
+		strEncoding = "'32bitFloat'";
 		break;
 	}
 	

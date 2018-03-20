@@ -166,14 +166,18 @@ template<
 
 	// Build the path to the requested file
 	std::string path = path_cat(doc_root, req.target());
-	if (req.target().back() == '/')
+	std::string path_req = req.target().to_string();
+	if (req.target().back() == '/')	{
 		path.append("index.html");
+		path_req = "/index.html";
+	}
 
 	// Attempt to construct response from available strings
 	boost::beast::error_code ec;
 	long long size;
-	if (!(contentMap.find(path) == contentMap.end())) {
-		http::string_body::value_type body(contentMap[path]);
+	if (!(contentMap.find(path_req) == contentMap.end())) {
+		//std::cout << contentMap[path_req] << "\n";
+		http::string_body::value_type body(contentMap[path_req]);
 		// Handle an unknown error
 		if (ec)
 			return send(server_error(ec.message()));
@@ -187,7 +191,7 @@ template<
 			std::make_tuple(std::move(body)),
 			std::make_tuple(http::status::ok, req.version()) };
 		res.set(http::field::server, BOOST_BEAST_VERSION_STRING);
-		res.set(http::field::content_type, mime_type(path));
+		res.set(http::field::content_type, mime_type(path_req));
 		res.content_length(size);
 		res.keep_alive(req.keep_alive());
 		return send(std::move(res));
@@ -318,7 +322,7 @@ public:
 		unsigned char pcm_local[PCMBUFFERLENGTH];
 		unsigned int pcmLength_local;
 		{std::unique_lock<std::mutex> lck(mtx);
-		cv.wait(lck);
+		while (pcmLength==0) cv.wait(lck);
 		pcmLength_local = pcmLength;
 		// Write binary PCM data
 		std::copy(pcm, pcm + pcmLength_local, pcm_local);

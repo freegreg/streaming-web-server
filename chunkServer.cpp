@@ -88,15 +88,15 @@ int main(int argc, LPCWSTR argv[])
 	while (!LCInitCompeted());
 
 	map<string, string> contentMap;
-	contentMap.insert(std::pair<string, string>("index.html", 
-		GetIndexPlayer(LCGetFormat(),
-			LCGetBitsPerSample(),
-			LCGetNChannels(),
-			LCGetSampleRate(),
-			20)
-		));
-	std::cout << contentMap["index.html"];
-	startBeastServer(100, 8080, R"(G:\projects\chunkServer\ConsoleApplication1\web_pcm_player)", contentMap);
+	string indexHtml = GetIndexPlayer(LCGetFormat(),
+		LCGetBitsPerSample(),
+		LCGetNChannels(),
+		LCGetSampleRate(),
+		20);
+	contentMap.insert(std::pair<string, string>("/", 	indexHtml));
+	contentMap.insert(std::pair<string, string>("/index.html", indexHtml));
+	//std::cout << contentMap["/index.html"];
+	startBeastServer(100, 8080, R"(e:\docs\projects\c++projects\ConsoleApplication1\ConsoleApplication1\web_pcm_player\)", contentMap);
 	start_capture_thread.join();
 	
 	//gfp = lame_init(); /* initialize libmp3lame */

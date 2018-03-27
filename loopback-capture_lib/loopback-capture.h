@@ -7,6 +7,7 @@
 // until the stop event is set
 // any failures will be propagated back via hr
 #pragma once
+#include "../threadSafeBuffer.h"
 struct LoopbackCaptureThreadFunctionArguments {
     IMMDevice *pMMDevice;
     bool bInt16;
@@ -15,8 +16,7 @@ struct LoopbackCaptureThreadFunctionArguments {
     HRESULT hr;
 };
 
-HRESULT LoopbackCapture(IMMDevice *pMMDevice, bool *capture_stop);
-void LoopbackCaptureThreadFunction(bool *capture_stop);
+HRESULT LoopbackCaptureThreadFunction(bool *capture_stop, threadSafePcmBuffer&);
 
 int LCGetSampleRate(void);
 int LCGetNChannels(void);

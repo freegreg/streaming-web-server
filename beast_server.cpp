@@ -253,16 +253,18 @@ class websocket_session : public std::enable_shared_from_this<websocket_session>
 		boost::asio::io_context::executor_type> strand_;
 	boost::asio::steady_timer timer_;
 	boost::beast::multi_buffer buffer_;
+	threadSafePcmBuffer &threadSafePcmBuffer_;
 	char ping_state_ = 0;
 
 public:
 	// Take ownership of the socket
 	explicit
-		websocket_session(tcp::socket socket)
+		websocket_session(tcp::socket socket, threadSafePcmBuffer &threadSafePcmBuf)
 		: ws_(std::move(socket))
 		, strand_(ws_.get_executor())
 		, timer_(ws_.get_executor().context(),
-		(std::chrono::steady_clock::time_point::max)())
+		(std::chrono::steady_clock::time_point::max)()),
+		threadSafePcmBuffer_(threadSafePcmBuf)
 	{
 	}
 
@@ -319,14 +321,12 @@ public:
 		//std::cout << "on_read_pcm..."  << std::endl;
 		// Note that there is activity
 		activity();
-		unsigned char pcm_local[PCMBUFFERLENGTH];
+		unsigned char *pcm_local;
 		unsigned int pcmLength_local;
-		{std::unique_lock<std::mutex> lck(mtx);
-		while (pcmLength==0) cv.wait(lck);
-		pcmLength_local = pcmLength;
+		{std::unique_lock<std::mutex> lck(threadSafePcmBuffer_.pcmMtx);
+		while (threadSafePcmBuffer_.GetPcmLength() == 0) threadSafePcmBuffer_.pcmCv.wait(lck);
 		// Write binary PCM data
-		std::copy(pcm, pcm + pcmLength_local, pcm_local);
-		pcmLength = 0;
+		pcm_local = threadSafePcmBuffer_.getBuffer(pcmLength_local);
 		}
 		ws_.binary(true);
 		ws_.async_write(
@@ -634,6 +634,7 @@ class http_session : public std::enable_shared_from_this<http_session>
 	boost::beast::flat_buffer buffer_;
 	std::string const& doc_root_;
 	std::map<string, string> contentMap_;
+	threadSafePcmBuffer &threadSafePcmBuffer_;
 	http::request<http::string_body> req_;
 	queue queue_;
 
@@ -643,7 +644,8 @@ public:
 		http_session(
 			tcp::socket socket,
 			std::string const& doc_root,
-			std::map<string, string> contentMap
+			std::map<string, string> contentMap,
+			threadSafePcmBuffer &threadSafePcmBuff
 			)
 		: socket_(std::move(socket))
 		, strand_(socket_.get_executor())
@@ -652,6 +654,7 @@ public:
 		, doc_root_(doc_root)
 		, queue_(*this)
 		, contentMap_(contentMap)
+		, threadSafePcmBuffer_(threadSafePcmBuff)
 	{
 	}
 
@@ -732,7 +735,7 @@ public:
 		{
 			// Create a WebSocket websocket_session by transferring the socket
 			std::make_shared<websocket_session>(
-				std::move(socket_))->do_accept(std::move(req_));
+				std::move(socket_), threadSafePcmBuffer_)->do_accept(std::move(req_));
 			return;
 		}
 
@@ -789,16 +792,19 @@ class listener : public std::enable_shared_from_this<listener>
 	tcp::socket socket_;
 	std::string const& doc_root_;
 	std::map<string, string> contentMap_;
+	threadSafePcmBuffer &threadSafePcmBuffer_;
 public:
 	listener(
 		boost::asio::io_context& ioc,
 		tcp::endpoint endpoint,
 		std::string const& doc_root,
-		std::map<string, string> contentMap)
+		std::map<string, string> contentMap,
+		threadSafePcmBuffer &threadSafePcmBuf)
 		: acceptor_(ioc)
 		, socket_(ioc)
 		, doc_root_(doc_root)
 		, contentMap_(contentMap)
+		, threadSafePcmBuffer_(threadSafePcmBuf)
 	{
 		boost::system::error_code ec;
 
@@ -869,7 +875,8 @@ public:
 			std::make_shared<http_session>(
 				std::move(socket_),
 				doc_root_,
-				contentMap_)->run();
+				contentMap_,
+				threadSafePcmBuffer_)->run();
 		}
 
 		// Accept another connection
@@ -879,7 +886,7 @@ public:
 
 //------------------------------------------------------------------------------
 
-int startBeastServer(int maxNumberOfThreads, unsigned short listeningPort, std::string const doc_root, map<string, string> contentMap)
+int startBeastServer(int maxNumberOfThreads, unsigned short listeningPort, std::string const doc_root, map<string, string> contentMap, threadSafePcmBuffer &threadSafePcmBuffer_)
 {
 	// Check command line arguments.
 	//if (argc != 5)
@@ -900,7 +907,8 @@ int startBeastServer(int maxNumberOfThreads, unsigned short listeningPort, std::
 		ioc,
 		tcp::endpoint{ tcp::v4(), listeningPort },
 		doc_root,
-		contentMap)->run();
+		contentMap, 
+		threadSafePcmBuffer_)->run();
 
 	// Capture SIGINT and SIGTERM to perform a clean shutdown
 	boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);

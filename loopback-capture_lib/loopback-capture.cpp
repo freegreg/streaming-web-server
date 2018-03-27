@@ -9,27 +9,24 @@
 #include <stdio.h>
 #include <iostream>
 #include "prefs.h"
+#include "../threadSafeBuffer.h"
 
 using namespace std;
-
-int sum;
-int sound_length;
-PCCH pSound;
 
 BYTE *pData;
 UINT32 nNumFramesToRead;
 DWORD dwFlags;
-mutex mtx;
-std::condition_variable cv;
 
 unsigned char pcm[PCMBUFFERLENGTH];
 unsigned int pcmLength = 0;
 volatile bool initCompleted = false;
 long long pnFrames;
 WAVEFORMATEX *pwfx;
-IMMDevice *pMMDevice;
 
-void LoopbackCaptureThreadFunction(bool *capture_stop) {
+
+HRESULT LoopbackCaptureThreadFunction(bool *capture_stop, threadSafePcmBuffer &threadSafePcmBuffer_) {
+
+	IMMDevice *pMMDevice = NULL;
 	HRESULT hr = S_OK;
 
 	hr = CoInitialize(NULL);
@@ -37,24 +34,15 @@ void LoopbackCaptureThreadFunction(bool *capture_stop) {
 		ERR(L"CoInitialize failed: hr = 0x%08x", hr);
 	}
 	CoUninitializeOnExit cuoe;
-	
+
 	// create arguments for loopback capture thread
 	// open default device if not specified
 	if (NULL == pMMDevice) {
 		hr = get_default_device(&pMMDevice);
 		if (FAILED(hr)) {
-			return;
+			return hr;
 		}
 	}
-
-	hr = LoopbackCapture(
-		pMMDevice,
-		capture_stop
-	);
-}
-
-HRESULT LoopbackCapture(IMMDevice *pMMDevice, bool *capture_stop) {
-    HRESULT hr;
 
     // activate an IAudioClient
     IAudioClient *pAudioClient;
@@ -196,6 +184,7 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice, bool *capture_stop) {
     }
     AudioClientStopOnExit stopAudioClient(pAudioClient);
 	initCompleted = true;
+
     bool bFirstPacket = true;
     for (UINT32 nPasses = 0; *capture_stop; nPasses++) {
 		
@@ -216,16 +205,9 @@ HRESULT LoopbackCapture(IMMDevice *pMMDevice, bool *capture_stop) {
                 NULL
                 );
 			if (nNumFramesToRead > 0) {
-				std::unique_lock<std::mutex> lck(mtx);
-				if ((pcmLength == 0) || ((pcmLength + nNumFramesToRead * BlockAlign) >= PCMBUFFERLENGTH)) {
-					std::copy(pData, pData + nNumFramesToRead * BlockAlign, pcm);
-					pcmLength = nNumFramesToRead * BlockAlign;
-				}
-				else {
-					std::copy(pData, pData + nNumFramesToRead * BlockAlign, pcm + pcmLength);
-					pcmLength = pcmLength + nNumFramesToRead * BlockAlign;
-				}
-				cv.notify_all();
+				std::unique_lock<std::mutex> lck(threadSafePcmBuffer_.pcmMtx);
+				threadSafePcmBuffer_.write(pData, nNumFramesToRead * BlockAlign);
+				threadSafePcmBuffer_.pcmCv.notify_all();
 			}
 
             if (FAILED(hr)) {
@@ -295,78 +277,4 @@ int LCGetNChannels(void) {
 
 bool LCInitCompeted(void) {
 	return initCompleted;
-}
-
-namespace little_endian_io
-{
-	template <typename Word>
-	std::ostream& write_word(std::ostream& outs, Word value, unsigned size = sizeof(Word))
-	{
-		for (; size; --size, value >>= 8)
-			outs.put(static_cast <char> (value & 0xFF));
-		return outs;
-	}
-}
-using namespace little_endian_io;
-
-void createWav(LPCWAVEFORMATEX pwfx, BYTE* pSoundData, LONG pSoundDataLength, UINT32 nFrames) {
-	stringstream wave;
-	// Write the file headers
-	wave << "RIFF----WAVEfmt ";     // (chunk size to be filled in later)
-								 // make a RIFF/WAVE chunk
-	
-	LONG lBytesInWfx = sizeof(WAVEFORMATEX) + pwfx->cbSize;
-	write_word(wave, lBytesInWfx);
-	wave.write(reinterpret_cast<PCHAR>(const_cast<LPWAVEFORMATEX>(pwfx)), lBytesInWfx);
-
-
-	//write_word(f, 16, 4);  // no extension data
-	//write_word(f, 1, 2);  // PCM - integer samples
-	//write_word(f, 2, 2);  // two channels (stereo file)
-	//write_word(f, 44100, 4);  // samples per second (Hz)
-	//write_word(f, 176400, 4);  // (Sample Rate * BitsPerSample * Channels) / 8
-	//write_word(f, 4, 2);  // data block size (size of two integer samples, one for each channel, in bytes)
-	//write_word(f, 16, 2);  // number of bits per sample (use a multiple of 8)
-	
-	// make a 'fact' chunk whose data is (DWORD)0
-	wave << "fact"; // (chunk size to be filled in later)
-					 // write the correct data to the fact chunk
-	write_word(wave, 4);
-	wave.write(reinterpret_cast<PCHAR>(&nFrames), sizeof(nFrames));
-	
-	// Write the data chunk header
-	size_t data_chunk_pos = wave.tellp();
-	wave << "data----";  // (chunk size to be filled in later)
-
-					  // Write the audio samples
-	wave.write(reinterpret_cast<PCHAR>(pSoundData), pSoundDataLength);
-
-	// Write the audio samples
-	// (We'll generate a single C4 note with a sine wave, fading from left to right)
-	//constexpr double two_pi = 6.283185307179586476925286766559;
-	//constexpr double max_amplitude = 32760;  // "volume"
-	//
-	//double hz = 44100;    // samples per second
-	//double frequency = 261.626;  // middle C
-	//double seconds = 0.2;      // time
-	//
-	//int N = hz * seconds;  // total number of samples
-	//for (int n = 0; n < N; n++)
-	//{
-	//	double amplitude = (double)n / N * max_amplitude;
-	//	double value = sin((two_pi * n * frequency) / hz);
-	//	write_word(f, (int)(amplitude  * value), 2);
-	//	write_word(f, (int)((max_amplitude - amplitude) * value), 2);
-	//}
-	//
-	// (We'll need the final file size to fix the chunk sizes above)
-	size_t file_length = wave.tellp();
-
-	// Fix the data chunk header to contain the data size
-	wave.seekp(data_chunk_pos + 4);
-	write_word(wave, file_length - data_chunk_pos + 8);
-
-	// Fix the file header to contain the proper RIFF chunk size, which is (file size - 8) bytes
-	wave.seekp(0 + 4);
-	write_word(wave, file_length - 8, 4);
 }

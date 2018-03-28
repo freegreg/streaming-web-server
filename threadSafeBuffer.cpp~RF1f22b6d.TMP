@@ -1,0 +1,23 @@
+#include "threadSafeBuffer.h"
+#include <mutex>
+
+
+threadSafePcmBuffer::threadSafePcmBuffer() {
+	pcm = new unsigned char[pcmBufferLength];
+	pcmLength = 0;
+}
+
+void threadSafePcmBuffer::write(unsigned char *data, unsigned int length) {
+	if ((pcmLength + length) >= pcmBufferLength)
+		pcmLength == 0;
+	std::copy(data, data + length, pcm + pcmLength);
+	pcmLength = pcmLength + length;
+}
+
+void threadSafePcmBuffer::read(unsigned char *data) {
+	std::copy(data, data + pcmLength, pcmLength);
+	pcmLength = 0;
+}
+
+void threadSafePcmBuffer::GetPcmLength() {
+}

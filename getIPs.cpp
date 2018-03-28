@@ -88,16 +88,16 @@ void printLocalIP(int ipFamily)
 		while (pCurrAddresses) {
 			//printf("\tLength of the IP_ADAPTER_ADDRESS struct: %ld\n",
 			//	pCurrAddresses->Length);
-			printf("\tIfIndex (IPv4 interface): %u\n", pCurrAddresses->IfIndex);
+			//printf("\tIfIndex (IPv4 interface): %u\n", pCurrAddresses->IfIndex);
 			//printf("\tAdapter name: %s\n", pCurrAddresses->AdapterName);
 			
-			printf("\tFriendly name: %wS\n", pCurrAddresses->FriendlyName);
+			printf("\t%wS: \n", pCurrAddresses->FriendlyName);
 
 			pUnicast = pCurrAddresses->FirstUnicastAddress;
 			if (pUnicast != NULL) {
 				for (i = 0; pUnicast != NULL; i++)
 					pUnicast = pUnicast->Next;
-				printf("\tNumber of Unicast Addresses: %d\n", i);
+				//printf("\tNumber of Unicast Addresses: %d\n", i);
 				// Parse all IPv4 and addresses
 				for (
 					IP_ADAPTER_UNICAST_ADDRESS* address = pCurrAddresses->FirstUnicastAddress;
@@ -119,8 +119,6 @@ void printLocalIP(int ipFamily)
 			}
 			else
 				printf("\tNo Unicast Addresses\n");
-
-			printf("\n");
 
 			pCurrAddresses = pCurrAddresses->Next;
 		}

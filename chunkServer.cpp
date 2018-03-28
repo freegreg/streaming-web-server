@@ -24,6 +24,8 @@
 #include "beast_server.h"
 #include "threadSafeBuffer.h"
 
+#include "opus.h"
+
 using boost::asio::ip::tcp;
 using namespace std;
 

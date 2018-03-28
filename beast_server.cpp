@@ -346,7 +346,7 @@ public:
 			boost::system::error_code ec,
 			std::size_t bytes_transferred)
 	{
-		//std::cout << "on_write_pcm_data..." << std::endl;
+		std::cout << "on_write_pcm_data... " << bytes_transferred  << std::endl;
 
 		// Happens when the timer closes the socket
 		if (ec == boost::asio::error::operation_aborted)

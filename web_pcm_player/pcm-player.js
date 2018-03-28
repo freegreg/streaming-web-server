@@ -12,7 +12,7 @@ PCMPlayer.prototype.init = function(option) {
     this.option = Object.assign({}, defaults, option);
     this.samples = new Float32Array();
     this.flush = this.flush.bind(this);
-    this.interval = setInterval(this.flush, this.option.flushingTime);
+    //this.interval = setInterval(this.flush, this.option.flushingTime);
     this.maxValue = this.getMaxValue();
     this.typedArray = this.getTypedArray();
     this.createContext();
@@ -59,6 +59,7 @@ PCMPlayer.prototype.feed = function(data) {
     tmp.set(this.samples, 0);
     tmp.set(data, this.samples.length);
     this.samples = tmp;
+	this.flush();
 };
 
 PCMPlayer.prototype.getFormatedValue = function(data) {

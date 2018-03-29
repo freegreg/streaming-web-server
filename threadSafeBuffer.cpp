@@ -25,6 +25,8 @@ threadSafePcmBuffer::threadSafePcmBuffer() {
 	{
 		fprintf(stderr, "failed to set bitrate: %s\n", opus_strerror(err));
 	}
+	
+	resampler = speex_resampler_init(channels, 44100, sampleRate, resamplerQuality, &err);
 
 }
 
@@ -38,20 +40,29 @@ void threadSafePcmBuffer::write(unsigned char *data, unsigned int length) {
 unsigned char* threadSafePcmBuffer::getOpusEncodedBuffer(unsigned int &length) {
 	int nbBytes;
 	/* Encode the frame. */
-	unsigned char *cbits = new unsigned char[maxPacketSize];
-	float *pcmFloat = new float[pcmLength/4];
-	float *internalPcmFloat = reinterpret_cast<float*>(internalPcm);
-	std::copy(internalPcmFloat, internalPcmFloat + pcmLength / 4, pcmFloat);
+	
+	float *pcmFloat = new float[882];
+	const float *internalPcmFloat = reinterpret_cast<const float*>(internalPcm);
+	std::copy(internalPcmFloat, internalPcmFloat + 882, pcmFloat);
 
-	nbBytes = opus_encode_float(encoder, pcmFloat, pcmLength / 4, cbits, maxPacketSize);
+	//resample
+	int err;
+	float *pcmFloatResampled = new float[960*2];
+	unsigned int sampleLength = 882;
+	unsigned int resampleLength;
+	err = speex_resampler_process_interleaved_float(resampler, pcmFloat, &sampleLength, pcmFloatResampled, &resampleLength);
+
+	unsigned char *cbits = new unsigned char[maxPacketSize];
+	nbBytes = opus_encode_float(encoder, pcmFloatResampled, resampleLength, cbits, maxPacketSize);
 	if (nbBytes<0)
 	{
 		fprintf(stderr, "encode failed: %s\n", opus_strerror(nbBytes));
 	}
 	length = nbBytes;
-	pcmLength = 0;
+	//pcmLength = 0;
 	return cbits;
 }
+
 
 unsigned char* threadSafePcmBuffer::getBuffer(unsigned int &length) {
 	std::copy(internalPcm, internalPcm + pcmLength, pcmBuff);

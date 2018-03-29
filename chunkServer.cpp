@@ -40,6 +40,12 @@ int main(int argc, LPCWSTR argv[]){
 
 	//print all available ip addresses from available interfaces
 	printLocalIP(4);
+
+	thread captureKey([&]()
+	{
+		std::getchar();
+		bKeepWaiting = false;
+	});
 	
 	thread start_capture_thread([&]()
 	{
@@ -63,6 +69,7 @@ int main(int argc, LPCWSTR argv[]){
 	
 	//start beast server on port 8088
 	startBeastServer(100, 8088, R"(e:\docs\projects\c++projects\ConsoleApplication1\ConsoleApplication1\web_pcm_player\)", contentMap, threadSafePcmBuffer_);
+	
 	start_capture_thread.join();
 	
 	std::getchar();

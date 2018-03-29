@@ -8,6 +8,7 @@
 #include <mutex>          // std::mutex
 #include <stdio.h>
 #include <iostream>
+#include <fstream>
 #include "prefs.h"
 #include "../threadSafeBuffer.h"
 
@@ -186,6 +187,13 @@ HRESULT LoopbackCaptureThreadFunction(bool *capture_stop, threadSafePcmBuffer &t
 	initCompleted = true;
 
     bool bFirstPacket = true;
+
+
+	std::ofstream opusFile;
+	opusFile.open("example.opus", ios::out | ios::trunc | ios::binary);
+	
+	
+
     for (UINT32 nPasses = 0; *capture_stop; nPasses++) {
 		
         // drain data while it is available
@@ -205,9 +213,18 @@ HRESULT LoopbackCaptureThreadFunction(bool *capture_stop, threadSafePcmBuffer &t
                 NULL
                 );
 			if (nNumFramesToRead > 0) {
+				unsigned char *opus;
+				unsigned int opus_length;
+
 				std::unique_lock<std::mutex> lck(threadSafePcmBuffer_.pcmMtx);
+
 				threadSafePcmBuffer_.write(pData, nNumFramesToRead * BlockAlign);
+				if (nNumFramesToRead > 441){
+					opus = threadSafePcmBuffer_.getOpusEncodedBuffer(opus_length);
+					opusFile.write(reinterpret_cast<char*>(opus), opus_length);
+			}
 				threadSafePcmBuffer_.pcmCv.notify_all();
+
 			}
 
             if (FAILED(hr)) {
@@ -255,7 +272,7 @@ HRESULT LoopbackCaptureThreadFunction(bool *capture_stop, threadSafePcmBuffer &t
 			INFINITE
 		);
     } // capture loop
-
+	opusFile.close();
     return hr;
 }
 int LCGetFormat(void){

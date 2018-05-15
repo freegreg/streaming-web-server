@@ -1,8 +1,4 @@
 #include "threadSafeBuffer.h"
-#include <mutex>
-#include <boost/asio/buffer.hpp>
-#include "opus.h"
-#include "speex_resampler.h"
 
 threadSafePcmBuffer::threadSafePcmBuffer() {
 	internalPcm = new unsigned char[pcmBufferLength];
@@ -27,7 +23,23 @@ threadSafePcmBuffer::threadSafePcmBuffer() {
 	}
 	
 	resampler = speex_resampler_init(channels, 44100, sampleRate, resamplerQuality, &err);
+	std::cout << speex_resampler_strerror(err);
 
+	opusFile = fopen("example.opus", "wb");
+	writeOggHeader(opusFile);
+	std::cout << "Created and opened opusFile " << std::endl;
+
+}
+
+threadSafePcmBuffer::~threadSafePcmBuffer() {
+	std::cout << "Close opusFile " << std::endl;
+	fclose(opusFile);
+	opus_encoder_destroy(encoder);
+}
+
+void threadSafePcmBuffer::CloseOpusFile() {
+	std::cout << "Close opusFile " << std::endl;
+	fclose(opusFile);
 }
 
 void threadSafePcmBuffer::write(unsigned char *data, unsigned int length) {
@@ -35,6 +47,36 @@ void threadSafePcmBuffer::write(unsigned char *data, unsigned int length) {
 		pcmLength = 0;
 	std::copy(data, data + length, internalPcm + pcmLength);
 	pcmLength = pcmLength + length;
+}
+
+void threadSafePcmBuffer::encodePcmToOpusOgg(unsigned char *data, unsigned int length) {
+	if ((pcm.size() + length) >= pcmBufferLength)
+		pcm.clear();
+	const float *internalPcmFloat = reinterpret_cast<const float*>(data);
+	std::copy(internalPcmFloat, internalPcmFloat + length/4, std::back_inserter(pcm));
+	int pcmLength = pcm.size();
+	if (pcm.size() >= 882) {
+
+		std::copy(pcm.begin(), pcm.begin() + 882, pcmFloat);
+		pcm.erase(pcm.begin(), pcm.begin() + 882);
+		
+		//resample
+		unsigned int sampleLength = 882;
+		unsigned int resampleLength;
+		int err = speex_resampler_process_interleaved_float(resampler, pcmFloat, &sampleLength, pcmFloatResampled, &resampleLength);
+		std::cout << "resampleLength " << resampleLength << std::endl;
+		std::cout << speex_resampler_strerror(err);
+		//encode resampled into opus
+		
+		int opusLength = opus_encode_float(encoder, pcmFloatResampled, resampleLength, opusRaw, maxPacketSize);
+		if (opusLength<0)
+		{
+			fprintf(stderr, "encode failed: %s\n", opus_strerror(opusLength));
+		}
+		else {
+			writeOgg(opusRaw, opusLength, opusFile);
+		}
+	}
 }
 
 unsigned char* threadSafePcmBuffer::getOpusEncodedBuffer(unsigned int &length) {
@@ -51,9 +93,12 @@ unsigned char* threadSafePcmBuffer::getOpusEncodedBuffer(unsigned int &length) {
 	unsigned int sampleLength = 882;
 	unsigned int resampleLength;
 	err = speex_resampler_process_interleaved_float(resampler, pcmFloat, &sampleLength, pcmFloatResampled, &resampleLength);
+	
+
 
 	unsigned char *cbits = new unsigned char[maxPacketSize];
 	nbBytes = opus_encode_float(encoder, pcmFloatResampled, resampleLength, cbits, maxPacketSize);
+
 	if (nbBytes<0)
 	{
 		fprintf(stderr, "encode failed: %s\n", opus_strerror(nbBytes));

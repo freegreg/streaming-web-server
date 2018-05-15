@@ -25,6 +25,7 @@
 #include "threadSafeBuffer.h"
 
 #include "opus.h"
+#include "opus_ogg.h"
 
 using boost::asio::ip::tcp;
 using namespace std;
@@ -34,7 +35,7 @@ bool bKeepWaiting = true;
 
 
 int main(int argc, LPCWSTR argv[]){	
-	
+
 	//threadsafe comunication
 	threadSafePcmBuffer threadSafePcmBuffer_;
 

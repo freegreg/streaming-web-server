@@ -175,7 +175,11 @@ template<
 	// Attempt to construct response from available strings
 	boost::beast::error_code ec;
 	long long size;
-	if (!(contentMap.find(path_req) == contentMap.end())) {
+	std::cout << path_req << "\n";
+	std::string opusRes = "/opus";
+	if (opusRes.copmare(path_req)) {
+	}
+	else if (!(contentMap.find(path_req) == contentMap.end())) {
 		//std::cout << contentMap[path_req] << "\n";
 		http::string_body::value_type body(contentMap[path_req]);
 		// Handle an unknown error

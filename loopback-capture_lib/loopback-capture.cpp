@@ -192,7 +192,10 @@ HRESULT LoopbackCaptureThreadFunction(bool *capture_stop, threadSafePcmBuffer &t
 
 	//std::ofstream opusFile;
 	//opusFile.open("example.opus", ios::out | ios::trunc | ios::binary);
-	
+	//FILE * opusFile;
+	//opusFile = fopen("example2.opus", "wb");
+	//writeOggHeader(opusFile);
+	//std::cout << "Created and opened opusFile " << std::endl;
 
     for (UINT32 nPasses = 0; *capture_stop; nPasses++) {
 		
@@ -220,10 +223,11 @@ HRESULT LoopbackCaptureThreadFunction(bool *capture_stop, threadSafePcmBuffer &t
 
 				//threadSafePcmBuffer_.write(pData, nNumFramesToRead * BlockAlign);
 				threadSafePcmBuffer_.encodePcmToOpusOgg(pData, nNumFramesToRead * BlockAlign);
-			//	if (nNumFramesToRead > 441){
-			//		opus = threadSafePcmBuffer_.getOpusEncodedBuffer(opus_length);
-			//		writeOgg(opus, opus_length, opusFile);
-			//		//opusFile.write(reinterpret_cast<char*>(opus), opus_length);
+
+				//if (nNumFramesToRead > 441){
+					//opus = threadSafePcmBuffer_.getOpusEncodedBuffer(pData, opus_length);
+					//writeOgg(opus, opus_length, opusFile);
+					//opusFile.write(reinterpret_cast<char*>(opus), opus_length);
 			//}
 				threadSafePcmBuffer_.pcmCv.notify_all();
 
@@ -275,7 +279,7 @@ HRESULT LoopbackCaptureThreadFunction(bool *capture_stop, threadSafePcmBuffer &t
 		);
     } // capture loop
 	threadSafePcmBuffer_.CloseOpusFile();
-	//opusFile.close();
+	//fclose(opusFile);
     return hr;
 }
 int LCGetFormat(void){

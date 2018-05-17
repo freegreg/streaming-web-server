@@ -21,8 +21,9 @@ threadSafePcmBuffer::threadSafePcmBuffer() {
 	{
 		fprintf(stderr, "failed to set bitrate: %s\n", opus_strerror(err));
 	}
-	
-	resampler = speex_resampler_init(channels, 44100, sampleRate, resamplerQuality, &err);
+	resampler2 = speex_resampler_init(channels, 44100, sampleRate, resamplerQuality, &err);
+	resampler1 = speex_resampler_init(channels, 44100, sampleRate, resamplerQuality, &err);
+
 	std::cout << speex_resampler_strerror(err);
 
 	opusFile = fopen("example.opus", "wb");
@@ -49,61 +50,136 @@ void threadSafePcmBuffer::write(unsigned char *data, unsigned int length) {
 	pcmLength = pcmLength + length;
 }
 
-void threadSafePcmBuffer::encodePcmToOpusOgg(unsigned char *data, unsigned int length) {
-	if ((pcm.size() + length) >= pcmBufferLength)
-		pcm.clear();
-	const float *internalPcmFloat = reinterpret_cast<const float*>(data);
-	std::copy(internalPcmFloat, internalPcmFloat + length/4, std::back_inserter(pcm));
-	int pcmLength = pcm.size();
-	if (pcm.size() >= 882) {
+void threadSafePcmBuffer::writePcmFloatBuffer(float *data, unsigned int length)
+{
+	if (length != 0 && length <= pcmBufferLength) {
+		if ((endPcmFloatBuffer + length) <= pcmBufferLength) {
+			std::copy(data, data + length, pcmFloatBuffer + endPcmFloatBuffer);
+			endPcmFloatBuffer += length;
+			if ((endPcmFloatBuffer >= startPcmFloatBuffer) && ((endPcmFloatBuffer - length) < startPcmFloatBuffer))
+				startPcmFloatBuffer = endPcmFloatBuffer + 1;
+		}
+		else if ((endPcmFloatBuffer + length) > pcmBufferLength) {
+			std::copy(data, data + (pcmBufferLength - endPcmFloatBuffer), pcmFloatBuffer + endPcmFloatBuffer);
+			std::copy(data + (pcmBufferLength - endPcmFloatBuffer), data + length, pcmFloatBuffer);
+			endPcmFloatBuffer = length - (pcmBufferLength - endPcmFloatBuffer);
+			if (endPcmFloatBuffer >= startPcmFloatBuffer)
+				startPcmFloatBuffer = endPcmFloatBuffer + 1; 
+		}
+		if (startPcmFloatBuffer >= pcmBufferLength)
+			startPcmFloatBuffer = 0;
+	}
+}
+void threadSafePcmBuffer::readPcmFloatBuffer(float *data, unsigned int length)
+{
+	if (length != 0 && length < pcmBufferLength && length < getLengthPcmFloatBuffer()) {
+		if ((startPcmFloatBuffer + length) <= pcmBufferLength) {
+			std::copy(pcmFloatBuffer + startPcmFloatBuffer, pcmFloatBuffer + startPcmFloatBuffer + length, data);
+			startPcmFloatBuffer += length;
+		}
+		else if ((startPcmFloatBuffer + length) >= pcmBufferLength) {
+			std::copy(pcmFloatBuffer + startPcmFloatBuffer, pcmFloatBuffer + pcmBufferLength, data);
+			std::copy(pcmFloatBuffer, pcmFloatBuffer + (length - (pcmBufferLength - startPcmFloatBuffer)), data + (pcmBufferLength - startPcmFloatBuffer));
+			startPcmFloatBuffer = length - (pcmBufferLength - startPcmFloatBuffer);
+		}
+		if (startPcmFloatBuffer >= pcmBufferLength)
+			startPcmFloatBuffer = 0;
+	}
+}
+unsigned int threadSafePcmBuffer::getLengthPcmFloatBuffer()
+{
+	if (startPcmFloatBuffer <= endPcmFloatBuffer)
+		return endPcmFloatBuffer - startPcmFloatBuffer; 
+	else
+		return endPcmFloatBuffer + (pcmBufferLength - startPcmFloatBuffer);
+}
 
-		std::copy(pcm.begin(), pcm.begin() + 882, pcmFloat);
-		pcm.erase(pcm.begin(), pcm.begin() + 882);
-		
+void threadSafePcmBuffer::encodePcmToOpusOgg(unsigned char *data, unsigned int length) {
+	float *internalPcmFloat = reinterpret_cast<float*>(data);
+	writePcmFloatBuffer(internalPcmFloat, length / 4);
+	//unsigned int len = getLengthPcmFloatBuffer();
+	while (getLengthPcmFloatBuffer() >= 882) {
+		//std::copy(internalPcmFloat, internalPcmFloat + 882, pcmFloat);
+		readPcmFloatBuffer(pcmFloat, 882);
+		//unsigned int len = getLengthPcmFloatBuffer();
 		//resample
-		unsigned int sampleLength = 882;
-		unsigned int resampleLength;
-		int err = speex_resampler_process_interleaved_float(resampler, pcmFloat, &sampleLength, pcmFloatResampled, &resampleLength);
-		std::cout << "resampleLength " << resampleLength << std::endl;
-		std::cout << speex_resampler_strerror(err);
+		unsigned int sampleLength = 441;
+		unsigned int resampleLength = 480;
+		int err = speex_resampler_process_interleaved_float(resampler1, pcmFloat, &sampleLength, pcmFloatResampled, &resampleLength);
+
 		//encode resampled into opus
-		
+		//unsigned char *opusRaw = new unsigned char[maxPacketSize];
 		int opusLength = opus_encode_float(encoder, pcmFloatResampled, resampleLength, opusRaw, maxPacketSize);
 		if (opusLength<0)
 		{
 			fprintf(stderr, "encode failed: %s\n", opus_strerror(opusLength));
 		}
-		else {
+		else
 			writeOgg(opusRaw, opusLength, opusFile);
-		}
 	}
 }
 
-unsigned char* threadSafePcmBuffer::getOpusEncodedBuffer(unsigned int &length) {
+void threadSafePcmBuffer::encodePcmToOpusOggTest(unsigned char *data, unsigned int length) {
+	float pcmFloat[882];
+	float pcmFloatResampled[960];
+	int nbBytes;
+
+	//pcm.clear();
+	//const float *internalPcmFloat = reinterpret_cast<const float*>(data);
+	const float *internalPcmFloat = reinterpret_cast<const float*>(data);
+	std::copy(internalPcmFloat, internalPcmFloat + length / 4, std::back_inserter(pcm));
+
+
+	/* Encode the frame. */
+	if (length >= 882){
+		
+		std::copy(internalPcmFloat, internalPcmFloat + 882, pcmFloat);
+		
+		//std::copy(pcm.begin(), pcm.begin() + 882, pcmFloat);
+		
+		//resample
+		unsigned int sampleLength = 441;
+		unsigned int resampleLength;
+		int err = speex_resampler_process_interleaved_float(resampler2, pcmFloat, &sampleLength, pcmFloatResampled, &resampleLength);
+
+		unsigned char *opusRaw = new unsigned char[maxPacketSize];
+		int opusLength = opus_encode_float(encoder, pcmFloatResampled, resampleLength, opusRaw, maxPacketSize);
+		if (opusLength<0)
+		{
+			fprintf(stderr, "encode failed: %s\n", opus_strerror(opusLength));
+			length = 0;
+		}
+		else
+			writeOgg(opusRaw, opusLength, opusFile);
+		//pcm.erase(pcm.begin(), pcm.begin() + 882);
+	}
+}
+
+unsigned char* threadSafePcmBuffer::getOpusEncodedBuffer(unsigned char *data, unsigned int &length) {
+	float pcmFloat[882];
+	float pcmFloatResampled[960];
 	int nbBytes;
 	/* Encode the frame. */
-	
-	float *pcmFloat = new float[882];
-	const float *internalPcmFloat = reinterpret_cast<const float*>(internalPcm);
+
+	const float *internalPcmFloat = reinterpret_cast<const float*>(data);
 	std::copy(internalPcmFloat, internalPcmFloat + 882, pcmFloat);
 
 	//resample
 	int err;
-	float *pcmFloatResampled = new float[960*2];
-	unsigned int sampleLength = 882;
-	unsigned int resampleLength;
-	err = speex_resampler_process_interleaved_float(resampler, pcmFloat, &sampleLength, pcmFloatResampled, &resampleLength);
-	
 
+	unsigned int sampleLength = 441;
+	unsigned int resampleLength;
+	err = speex_resampler_process_interleaved_float(resampler2, pcmFloat, &sampleLength, pcmFloatResampled, &resampleLength);
 
 	unsigned char *cbits = new unsigned char[maxPacketSize];
 	nbBytes = opus_encode_float(encoder, pcmFloatResampled, resampleLength, cbits, maxPacketSize);
-
+	length = nbBytes;
 	if (nbBytes<0)
 	{
 		fprintf(stderr, "encode failed: %s\n", opus_strerror(nbBytes));
+		length = 0;
 	}
-	length = nbBytes;
+	
 	//pcmLength = 0;
 	return cbits;
 }

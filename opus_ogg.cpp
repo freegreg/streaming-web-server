@@ -220,7 +220,7 @@ void writeOgg(unsigned char *cbits, int length, FILE *fout) {
 	int                max_ogg_delay = 48000; /*48kHz samples*/
 	ogg_packet         op;
 	static ogg_int64_t        enc_granulepos = 0;
-	opus_int32         frame_size = 960;
+	opus_int32         frame_size = 480;
 	
 	ogg_page           og;
 	static unsigned int id = -1;
